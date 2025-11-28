@@ -10,6 +10,10 @@
 $ yarn install
 ```
 
+## Requirement
+
+- Docker Desktop
+
 ## Running the app
 
 ```bash

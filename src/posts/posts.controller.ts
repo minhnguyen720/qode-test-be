@@ -33,7 +33,6 @@ export class PostsController {
     const ext = path.extname(file.originalname);
     const filename = `${id}${ext}`;
     const filePath = path.resolve(uploadDir, filename);
-    console.log(filePath);
     fs.writeFileSync(filePath, file.buffer);
     const createPostDto: CreatePostDto = {
       createdBy: 'admin',
