@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Body,
   Param,
   Delete,
   UseInterceptors,
@@ -25,7 +24,7 @@ export class PostsController {
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
-  async uploadFile(@UploadedFile() file: any, @Body() body: any) {
+  async uploadFile(@UploadedFile() file: any) {
     const uploadDir = './uploads';
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });

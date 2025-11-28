@@ -1,26 +1,4 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
-
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
-
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+# Backend Feature Technical Documentation
 
 ## Description
 
@@ -35,6 +13,19 @@ $ yarn install
 ## Running the app
 
 ```bash
+# docker
+$ docker build .
+
+$ docker compose up -d
+
+# for first time user, you will need to run migration to create the entities
+
+#prisma
+$ npx prisma migrate dev --name init
+
+$ npx prisma generate
+
+
 # development
 $ yarn run start
 
@@ -45,29 +36,221 @@ $ yarn run start:dev
 $ yarn run start:prod
 ```
 
-## Test
+## Overview
 
-```bash
-# unit tests
-$ yarn run test
+This document describes the backend features responsible for uploading images, creating comments, and associating comments with specific images. The implementation is based on **NestJS**, **Prisma ORM**, and **PostgreSQL**. The backend exposes RESTful endpoints that allow clients to:
 
-# e2e tests
-$ yarn run test:e2e
+1. Upload an image
+2. Store metadata of the uploaded image in the `Post` table
+3. Add comments to a specific image using the `Comment` table
+4. Retrieve posts along with their associated comments
 
-# test coverage
-$ yarn run test:cov
+---
+
+## Database Schema
+
+The system uses two relational tables: **Post** and **Comment**. These tables are defined using Prisma ORM with the following schema:
+
+```prisma
+model Post {
+  id        String   @id
+  createdAt DateTime @default(now())
+  createdBy String
+  filename  String
+  url       String
+  isHidden  Boolean  @default(false)
+  comments  Comment[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  postId    String?
+  post      Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdBy String
+  createdAt DateTime
+  content   String
+}
 ```
 
-## Support
+### Schema Explanation
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+- **Post**
+  - Stores metadata about an uploaded image
+  - `isHidden` can be used for soft visibility control
+  - One-to-many relationship with `Comment`
 
-## Stay in touch
+- **Comment**
+  - Stores a user comment
+  - Contains `postId` which links the comment to a specific image
+  - `onDelete: Cascade` ensures comments are deleted when their associated post is removed
 
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+---
 
-## License
+## Feature 1: Upload an Image
 
-Nest is [MIT licensed](LICENSE).
+### Workflow
+
+1. Client uploads an image using `multipart/form-data`
+2. Backend stores the file on disk or cloud storage
+3. Backend inserts metadata into the `Post` table
+4. API returns the `Post` record including its generated `id`
+
+### Endpoint
+
+**POST /posts/upload**
+
+#### Request
+
+```
+Content-Type: multipart/form-data
+file: <image>
+createdBy: string
+```
+
+#### Response
+
+```json
+{
+  "id": "unique-id",
+  "createdAt": "2025-11-28T03:34:00.000Z",
+  "createdBy": "user123",
+  "filename": "abc.jpg",
+  "url": "https://your-domain.com/uploads/abc.jpg",
+  "isHidden": false
+}
+```
+
+---
+
+## Feature 2: Create a Comment for an Image
+
+### Workflow
+
+1. Client provides `postId`, `content`, and `createdBy`
+2. Backend inserts a new entry into the `Comment` table
+3. The comment is associated with the post via `postId`
+
+### Endpoint
+
+**POST /comments**
+
+#### Request
+
+```json
+{
+  "postId": "<post-id>",
+  "createdBy": "user123",
+  "content": "This is my new comment"
+}
+```
+
+#### Response
+
+```json
+{
+  "id": "uuid-value",
+  "postId": "<post-id>",
+  "createdBy": "user123",
+  "createdAt": "2025-11-28T03:35:00.000Z",
+  "content": "This is my new comment"
+}
+```
+
+---
+
+## Feature 3: Retrieve Comments by Post's id
+
+### Endpoint
+
+**GET /comments/:postId**
+
+### Response
+
+```json
+{
+  "comments": [
+    {
+      "id": "comment-uuid",
+      "createdBy": "john",
+      "createdAt": "2025-11-28T03:35:00.000Z",
+      "content": "Nice picture!"
+    }
+  ]
+}
+```
+
+---
+
+## Feature 4: Retrieve All Posts
+
+### Endpoint
+
+**GET /posts**
+
+### Response
+
+```json
+{
+  "data": [
+    {
+      "id": "a9302d10-d42c-4009-a68e-9bdc06e54355",
+      "createdAt": "2025-11-28T03:39:11.588Z",
+      "createdBy": "admin",
+      "filename": "upload-file-a9302d10-d42c-4009-a68e-9bdc06e54355",
+      "url": "D:\\sandbox\\qode\\be\\uploads\\a9302d10-d42c-4009-a68e-9bdc06e54355.JPG",
+      "isHidden": false
+    },
+    {
+      "id": "a4c81207-d902-4092-b562-790f0bb8e026",
+      "createdAt": "2025-11-28T03:39:00.126Z",
+      "createdBy": "admin",
+      "filename": "upload-file-a4c81207-d902-4092-b562-790f0bb8e026",
+      "url": "D:\\sandbox\\qode\\be\\uploads\\a4c81207-d902-4092-b562-790f0bb8e026.JPG",
+      "isHidden": false
+    }
+  ]
+}
+```
+
+---
+
+## System Architecture
+
+### Components
+
+- **Controller Layer:** Receives HTTP requests and validates input
+- **Service Layer:** Business logic for upload, comment creation, and data retrieval
+- **Prisma Client:** Communicates with PostgreSQL
+- **Storage Provider:** Local disk or cloud (AWS S3, Google Cloud Storage, etc.)
+
+### Relationship Diagram
+
+```
+Post (1) ----- (∞) Comment
+```
+
+---
+
+## Error Handling
+
+| Scenario                           | Action                           |
+| ---------------------------------- | -------------------------------- |
+| Invalid image format               | Return 400 Bad Request           |
+| Missing postId on comment creation | Return 400 Bad Request           |
+| postId not found                   | Return 404 Not Found             |
+| Server storage error               | Return 500 Internal Server Error |
+
+---
+
+## Security Considerations
+
+- Validate uploaded file types (JPEG, PNG, etc.)
+- Limit file size
+- Implement authentication for `createdBy`
+- Use access control on hidden posts (`isHidden`)
+
+---
+
+## Conclusion
+
+This backend system supports uploading images, storing post metadata, creating comments, and retrieving relational data between posts and comments. The design is modular, scalable, and easy to integrate with a modern frontend such as Next.js.
